@@ -198,7 +198,36 @@ class Car:
 
     def save_trajectory(self, filename):
         with open(filename, "wb") as f:
-            pickle.dump(self.trajectory, f)
+            pickle.dump((self.distance, self.trajectory), f)
+            # self.distance is used to calculate the true reward
+
+
+def generate_database(trajectory_path):
+    # Load All Trajectories
+    trajectories = []
+    for file in glob.glob(f"{trajectory_path}*.pkl"):
+        with open(file, "rb") as f:
+            distance, trajectory = pickle.load(f)
+            trajectories.append((distance, trajectory))
+    print(max(len(trajectory) for distance, trajectory in trajectories))
+
+    random.shuffle(trajectories)
+    if len(trajectories) % 2 != 0:
+        trajectories.pop()
+
+    trajectory_pairs = [
+        (
+            trajectories[i][1],
+            trajectories[i + 1][1],
+            1 if trajectories[i][0] > trajectories[i + 1][0] else 2,
+        )
+        for i in range(0, len(trajectories), 2)
+    ]
+    print(f"Generating Database with {len(trajectory_pairs)} trajectory pairs...")
+
+    # Save To Database
+    with open(trajectory_path + "database.pkl", "wb") as f:
+        pickle.dump(trajectory_pairs, f)
 
 
 def run_simulation(genomes, config):
@@ -267,17 +296,26 @@ def run_simulation(genomes, config):
             break
 
         counter += 1
-        if counter == 30 * 40:  # Stop After About 20 Seconds
-            if number_of_trajectories > 0:
+        if counter == 30 * 15:  # Stop After About 7 Seconds
+            if (
+                number_of_trajectories > 0
+                and saved_trajectory_count < number_of_trajectories
+            ):
                 for i, car in enumerate(cars):
                     if saved_trajectory_count >= number_of_trajectories:
                         break
                     car.save_trajectory(
                         f"{trajectory_path}trajectory_{current_generation}_{i}.pkl"
                     )
-                saved_trajectory_count += 1
+                    saved_trajectory_count += 1
             break
-
+        if (
+            number_of_trajectories > 0
+            and saved_trajectory_count >= number_of_trajectories
+        ):
+            print(f"Saved {saved_trajectory_count} trajectories to {trajectory_path}.")
+            generate_database(trajectory_path)
+            sys.exit(0)
         # Draw Map And All Cars That Are Alive
         screen.blit(game_map, (0, 0))
         for car in cars:
@@ -308,14 +346,15 @@ if __name__ == "__main__":
         "--trajectories",
         type=int,
         nargs=1,
-        default=-1,
+        default=[-1],
         help="Number of trajectories to save",
     )
     args = parse.parse_args()
-    number_of_trajectories = -1
+    number_of_trajectories = [-1]
     if args.trajectories is not None:
         number_of_trajectories = args.trajectories[0]
-        print(f"Saving {number_of_trajectories} trajectories...")
+        if number_of_trajectories < 0:
+            print(f"Saving {number_of_trajectories} trajectories...")
 
     # Load Config
     config_path = "./config.txt"
