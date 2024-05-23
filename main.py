@@ -28,6 +28,7 @@ BORDER_COLOR = (255, 255, 255, 255)  # Color To Crash on Hit
 
 current_generation = 0  # Generation counter
 saved_trajectory_count = 0  # Counter for saved trajectories
+trajectory_path = "./trajectories/"
 
 
 class Car:
@@ -205,29 +206,40 @@ class Car:
 def generate_database(trajectory_path):
     # Load All Trajectories
     trajectories = []
-    for file in glob.glob(f"{trajectory_path}*.pkl"):
+    for file in glob.glob(f"{trajectory_path}/trajectory*.pkl"):
         with open(file, "rb") as f:
             distance, trajectory = pickle.load(f)
             trajectories.append((distance, trajectory))
-    print(max(len(trajectory) for distance, trajectory in trajectories))
+
+    max_length = max(len(trajectory) for distance, trajectory in trajectories)
 
     random.shuffle(trajectories)
     if len(trajectories) % 2 != 0:
         trajectories.pop()
 
+    # Pads shorter tajectoires so there is a consistent input size
+    def pad_trajectory(trajectory, max_length):
+        return trajectory + [trajectory[-1]] * (max_length - len(trajectory))
+
     trajectory_pairs = [
         (
-            trajectories[i][1],
-            trajectories[i + 1][1],
-            1 if trajectories[i][0] > trajectories[i + 1][0] else 2,
+            pad_trajectory(trajectories[i][1], max_length),
+            pad_trajectory(trajectories[i + 1][1], max_length),
+            0 if trajectories[i][0] > trajectories[i + 1][0] else 1,
         )
         for i in range(0, len(trajectories), 2)
     ]
     print(f"Generating Database with {len(trajectory_pairs)} trajectory pairs...")
 
     # Save To Database
-    with open(trajectory_path + "database.pkl", "wb") as f:
+    with open(trajectory_path + f"database_{len(trajectory_pairs)}.pkl", "wb") as f:
         pickle.dump(trajectory_pairs, f)
+
+    # Delete all trajectories
+    print("Removing old trajectories...")
+    old_trajectories = glob.glob(trajectory_path + "trajectory*")
+    for f in old_trajectories:
+        os.remove(f)
 
 
 def run_simulation(genomes, config):
@@ -261,7 +273,6 @@ def run_simulation(genomes, config):
     # Simple Counter To Roughly Limit Time (Not Good Practice)
     counter = 0
     global saved_trajectory_count
-    trajectory_path = "./trajectories/"
 
     while True:
         # Exit On Quit Event
@@ -307,6 +318,7 @@ def run_simulation(genomes, config):
                     car.save_trajectory(
                         f"{trajectory_path}trajectory_{current_generation}_{i}.pkl"
                     )
+                    print("Saved trajectory")
                     saved_trajectory_count += 1
             break
         if (
@@ -353,7 +365,11 @@ if __name__ == "__main__":
     number_of_trajectories = [-1]
     if args.trajectories is not None:
         number_of_trajectories = args.trajectories[0]
-        if number_of_trajectories < 0:
+        if number_of_trajectories > 0:
+            print("Removing old trajectories...")
+            old_trajectories = glob.glob(trajectory_path + "trajectory*")
+            for f in old_trajectories:
+                os.remove(f)
             print(f"Saving {number_of_trajectories} trajectories...")
 
     # Load Config
