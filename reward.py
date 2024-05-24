@@ -5,15 +5,17 @@ import torch.nn.functional as F
 import pickle
 import numpy as np
 
+import matplotlib.pyplot as plt
+
 
 class TrajectoryRewardNet(nn.Module):
-    def __init__(self, input_size, hidden_size=128, output_size=2):
+    def __init__(self, input_size, hidden_size=128):
         super(TrajectoryRewardNet, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.bn1 = nn.BatchNorm1d(hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.bn2 = nn.BatchNorm1d(hidden_size)
-        self.fc3 = nn.Linear(hidden_size, output_size)
+        self.fc3 = nn.Linear(hidden_size, 1)
 
     def forward(self, x):
         x = F.relu(self.bn1(self.fc1(x)))
@@ -24,22 +26,15 @@ class TrajectoryRewardNet(nn.Module):
 
 # Define the Bradley-Terry model to compute preferences
 def bradley_terry_model(r1, r2):
-    exp_r1 = torch.exp(r1[:, 0])
-    exp_r2 = torch.exp(r2[:, 1])
+    exp_r1 = torch.exp(r1)
+    exp_r2 = torch.exp(r2)
     probability = exp_r1 / (exp_r1 + exp_r2)
     return probability.squeeze()
 
 
 # Define the loss function
 def preference_loss(predicted_probabilities, true_preferences):
-    try:
-        loss = F.binary_cross_entropy(predicted_probabilities, true_preferences)
-    except:
-        import ipdb
-
-        ipdb.set_trace()
-
-    return loss
+    return F.binary_cross_entropy(predicted_probabilities, true_preferences)
 
 
 # Sample input size and hyperparameters
@@ -91,6 +86,25 @@ def prepare_data(data, max_length=input_size // 2):
     return trajectories1, trajectories2, true_preferences
 
 
+def prepare_single_trajectory(trajectory, max_length=input_size // 2):
+    def pad_or_truncate(trajectory, length):
+        if len(trajectory) > length:
+            return trajectory[:length]
+        else:
+            padding = [trajectory[-1]] * (length - len(trajectory))
+            return trajectory + padding
+
+    # Pad or truncate the trajectory
+    trajectory_padded = pad_or_truncate(trajectory, max_length)
+    # Flatten the list of tuples
+    trajectory_flat = [item for sublist in trajectory_padded for item in sublist]
+
+    # Convert to tensor and add an extra dimension
+    trajectory_tensor = torch.tensor([trajectory_flat], dtype=torch.float32)
+
+    return trajectory_tensor
+
+
 def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
     data = load_data(file_path)
     trajectories1, trajectories2, true_preferences = prepare_data(data)
@@ -101,6 +115,11 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
         batch_size = dataset_size
 
     best_loss = np.inf
+
+    network_reward_comparator = []
+    with open("trajectories/comparator.pkl", "rb") as f:
+        comparator_reward, comparator_trajectory = pickle.load(f)
+    comparator_trajectory = prepare_single_trajectory(comparator_trajectory)
 
     for epoch in range(epochs):
         net.train()
@@ -138,7 +157,19 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
         if epoch % 10 == 0:
             print(f"Epoch {epoch}/{epochs}, Loss: {average_loss}")
 
+        net.eval()
+        network_reward_comparator.append(net(comparator_trajectory).item())
+
+    plt.plot(network_reward_comparator, color="blue", label="Network Reward")
+    plt.plot(
+        [comparator_reward] * len(network_reward_comparator),
+        color="red",
+        label="True Reward",
+    )
+    plt.legend()
+    plt.savefig("figures/reward.png")
+
 
 if __name__ == "__main__":
-    file_path = "trajectories/database.pkl"
+    file_path = "trajectories/database_50.pkl"
     train_model(file_path)

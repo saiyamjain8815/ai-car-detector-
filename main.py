@@ -199,7 +199,7 @@ class Car:
 
     def save_trajectory(self, filename):
         with open(filename, "wb") as f:
-            pickle.dump((self.distance, self.trajectory), f)
+            pickle.dump((self.get_reward(), self.trajectory), f)
             # self.distance is used to calculate the true reward
 
 
@@ -208,10 +208,17 @@ def generate_database(trajectory_path):
     trajectories = []
     for file in glob.glob(f"{trajectory_path}/trajectory*.pkl"):
         with open(file, "rb") as f:
-            distance, trajectory = pickle.load(f)
-            trajectories.append((distance, trajectory))
+            reward, trajectory = pickle.load(f)
+            trajectories.append((reward, trajectory))
 
-    max_length = max(len(trajectory) for distance, trajectory in trajectories)
+    max_length, max_index = max(
+        (len(trajectory), index)
+        for index, (reward, trajectory) in enumerate(trajectories)
+    )
+
+    # create trajectories used for making plots in training
+    with open(trajectory_path + "comparator.pkl", "wb") as f:
+        pickle.dump(trajectories[max_index], f)
 
     random.shuffle(trajectories)
     if len(trajectories) % 2 != 0:
@@ -231,15 +238,21 @@ def generate_database(trajectory_path):
     ]
     print(f"Generating Database with {len(trajectory_pairs)} trajectory pairs...")
 
-    # Save To Database
-    with open(trajectory_path + f"database_{len(trajectory_pairs)}.pkl", "wb") as f:
-        pickle.dump(trajectory_pairs, f)
-
     # Delete all trajectories
     print("Removing old trajectories...")
     old_trajectories = glob.glob(trajectory_path + "trajectory*")
     for f in old_trajectories:
         os.remove(f)
+
+    # Delete old database
+    print("Removing old database...")
+    old_trajectories = glob.glob(trajectory_path + "database*")
+    for f in old_trajectories:
+        os.remove(f)
+
+    # Save To Database
+    with open(trajectory_path + f"database_{len(trajectory_pairs)}.pkl", "wb") as f:
+        pickle.dump(trajectory_pairs, f)
 
 
 def run_simulation(genomes, config):
@@ -265,7 +278,7 @@ def run_simulation(genomes, config):
     clock = pygame.time.Clock()
     generation_font = pygame.font.SysFont("Arial", 30)
     alive_font = pygame.font.SysFont("Arial", 20)
-    game_map = pygame.image.load("map.png").convert()  # Convert Speeds Up A Lot
+    game_map = pygame.image.load("maps/map.png").convert()  # Convert Speeds Up A Lot
 
     global current_generation
     current_generation += 1
