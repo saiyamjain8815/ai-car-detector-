@@ -46,6 +46,10 @@ learning_rate = 0.0003
 
 # Instantiate the network, optimizer, and criterion
 net = TrajectoryRewardNet(input_size, hidden_size)
+for param in net.parameters():
+    # only apply to weights
+    if len(param.shape) > 1:
+        nn.init.xavier_uniform_(param, gain=nn.init.calculate_gain("relu"))
 optimizer = optim.Adam(net.parameters(), lr=learning_rate)
 
 
@@ -107,6 +111,18 @@ def prepare_single_trajectory(trajectory, max_length=input_size // 2):
     return trajectory_tensor
 
 
+def visualize_trajectories(batch_1, batch_2):
+    for trajectory in batch_1:
+        x = trajectory[::2]
+        y = trajectory[1::2]
+        plt.plot(x, y, color="red", alpha=0.1)
+    for trajectory in batch_2:
+        x = trajectory[::2]
+        y = trajectory[1::2]
+        plt.plot(x, y, color="blue", alpha=0.1)
+    plt.show()
+
+
 def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
     data = load_data(file_path)
     trajectories1, trajectories2, true_preferences = prepare_data(data)
@@ -146,24 +162,35 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
                 loss = preference_loss(predicted_probabilities, batch_true_preferences)
                 total_loss += loss.item()
             except:
-
-                def visualize_trajectories(batch_1, batch_2):
-                    # unbatch
-                    for trajectory in batch_1:
-                        x = trajectory[::2]
-                        y = trajectory[1::2]
-                        plt.plot(x, y, color="red", alpha=0.1)
-                    for trajectory in batch_2:
-                        x = trajectory[::2]
-                        y = trajectory[1::2]
-                        plt.plot(x, y, color="blue", alpha=0.1)
-                    plt.show()
-
+                for p in net.parameters():
+                    # get the smallest weight
+                    min_weight = torch.min(p.data)
+                    # get the largest weight
+                    max_weight = torch.max(p.data)
+                    # get the mean of the weights
+                    mean_weight = torch.mean(p.data)
+                    # check if any weights are nan
+                    has_nan = torch.isnan(p.data).any()
+                    # print everything
+                    print(min_weight, max_weight, mean_weight, has_nan)
                 visualize_trajectories(batch_trajectories1, batch_trajectories2)
 
             # Backward pass and optimization
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
             optimizer.step()
+
+            for p in net.parameters():
+                # get the smallest weight
+                min_weight = torch.min(p.data)
+                # get the largest weight
+                max_weight = torch.max(p.data)
+                # get the mean of the weights
+                mean_weight = torch.mean(p.data)
+                # check if any weights are nan
+                has_nan = torch.isnan(p.data).any()
+                # print everything
+                print(min_weight, max_weight, mean_weight, has_nan)
 
         average_loss = total_loss / (dataset_size // batch_size)
 
@@ -185,7 +212,6 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
         label="True Reward",
     )
     plt.legend()
-    torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
     plt.savefig("figures/reward.png")
 
 

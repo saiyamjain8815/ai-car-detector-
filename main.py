@@ -398,7 +398,7 @@ if __name__ == "__main__":
 
     if args.reward is not None:
         print("Loading reward network...")
-        reward_network = TrajectoryRewardNet(TRAJECTORY_LENGTH)
+        reward_network = TrajectoryRewardNet(TRAJECTORY_LENGTH * 2)
         weights = torch.load(args.reward)
         reward_network.load_state_dict(weights)
 
@@ -429,4 +429,6 @@ if __name__ == "__main__":
     population.add_reporter(stats)
 
     # Run Simulation For A Maximum of 1000 Generations
-    population.run(run_simulation, 1000)
+    population.run(
+        run_simulation, 1000 if number_of_trajectories < 0 else number_of_trajectories
+    )
