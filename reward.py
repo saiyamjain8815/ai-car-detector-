@@ -57,7 +57,9 @@ optimizer = optim.Adam(net.parameters(), lr=learning_rate)
 def load_data(file_path):
     with open(file_path, "rb") as f:
         data = pickle.load(f)
-    return data
+    triples = [element[:3] for element in data]
+    true_rewards = [element[-2:] for element in data]
+    return triples, true_rewards
 
 
 # Function to prepare data for training
@@ -72,19 +74,22 @@ def prepare_data(data, max_length=input_size // 2):
     trajectories1 = []
     trajectories2 = []
     true_preferences = []
+    try:
+        for t1, t2, preference in data:
+            t1_padded = pad_or_truncate(t1, max_length)
+            t2_padded = pad_or_truncate(t2, max_length)
 
-    for t1, t2, preference in data:
-        t1_padded = pad_or_truncate(t1, max_length)
-        t2_padded = pad_or_truncate(t2, max_length)
+            # Flatten the list of tuples
+            t1_flat = [item for sublist in t1_padded for item in sublist]
+            t2_flat = [item for sublist in t2_padded for item in sublist]
 
-        # Flatten the list of tuples
-        t1_flat = [item for sublist in t1_padded for item in sublist]
-        t2_flat = [item for sublist in t2_padded for item in sublist]
+            trajectories1.append(t1_flat)
+            trajectories2.append(t2_flat)
+            true_preferences.append(preference)
+    except:
+        import ipdb
 
-        trajectories1.append(t1_flat)
-        trajectories2.append(t2_flat)
-        true_preferences.append(preference)
-
+        ipdb.set_trace()
     trajectories1 = torch.tensor(trajectories1, dtype=torch.float32)
     trajectories2 = torch.tensor(trajectories2, dtype=torch.float32)
     true_preferences = torch.tensor(true_preferences, dtype=torch.float32)
@@ -124,7 +129,7 @@ def visualize_trajectories(batch_1, batch_2):
 
 
 def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
-    data = load_data(file_path)
+    data, true_rewards = load_data(file_path)
     trajectories1, trajectories2, true_preferences = prepare_data(data)
 
     dataset_size = len(true_preferences)

@@ -1,5 +1,6 @@
 # This Code is Heavily Inspired By The YouTuber: Cheesy AI
 # Code Changed, Optimized And Commented By: NeuralNine (Florian Dedov)
+# Code Adapted for preference learning as a apart of Emerge Lab research
 
 import math
 import random
@@ -18,8 +19,6 @@ from reward import TrajectoryRewardNet, prepare_single_trajectory
 import torch
 
 # Constants
-# WIDTH = 1600
-# HEIGHT = 880
 
 WIDTH = 1920
 HEIGHT = 1080
@@ -38,14 +37,12 @@ reward_network = None
 
 
 class Car:
-
     def __init__(self):
         # Load Car Sprite and Rotate
         self.sprite = pygame.image.load("car.png").convert()  # Convert Speeds Up A Lot
         self.sprite = pygame.transform.scale(self.sprite, (CAR_SIZE_X, CAR_SIZE_Y))
         self.rotated_sprite = self.sprite
 
-        # self.position = [690, 740] # Starting Position
         self.position = [830, 920]  # Starting Position
         self.angle = 0
         self.speed = 0
@@ -243,6 +240,8 @@ def generate_database(trajectory_path):
             pad_trajectory(trajectories[i][1], max_length),
             pad_trajectory(trajectories[i + 1][1], max_length),
             0 if trajectories[i][0] > trajectories[i + 1][0] else 1,
+            trajectories[i][0],
+            trajectories[i + 1][0],
         )
         for i in range(0, len(trajectories), 2)
     ]
