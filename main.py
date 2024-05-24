@@ -14,6 +14,9 @@ import argparse
 
 import pickle
 
+from reward import TrajectoryRewardNet, prepare_single_trajectory
+import torch
+
 # Constants
 # WIDTH = 1600
 # HEIGHT = 880
@@ -26,9 +29,12 @@ CAR_SIZE_Y = 60
 
 BORDER_COLOR = (255, 255, 255, 255)  # Color To Crash on Hit
 
+TRAJECTORY_LENGTH = 30 * 15
+
 current_generation = 0  # Generation counter
 saved_trajectory_count = 0  # Counter for saved trajectories
 trajectory_path = "./trajectories/"
+reward_network = None
 
 
 class Car:
@@ -186,6 +192,10 @@ class Car:
     def get_reward(self):
         # Calculate Reward (Maybe Change?)
         # return self.distance / 50.0
+        if reward_network is not None:
+            trajectory_tensor = prepare_single_trajectory(self.trajectory)
+            reward = reward_network(trajectory_tensor)
+            return reward.item()
         return self.distance / (CAR_SIZE_X / 2)
 
     def rotate_center(self, image, angle):
@@ -320,7 +330,7 @@ def run_simulation(genomes, config):
             break
 
         counter += 1
-        if counter == 30 * 15:  # Stop After About 7 Seconds
+        if counter == TRAJECTORY_LENGTH:  # Stop After About 7 Seconds
             if (
                 number_of_trajectories > 0
                 and saved_trajectory_count < number_of_trajectories
@@ -374,7 +384,24 @@ if __name__ == "__main__":
         default=[-1],
         help="Number of trajectories to save",
     )
+    parse.add_argument(
+        "-r",
+        "--reward",
+        type=str,
+        help="Directory to reward function weights",
+    )
     args = parse.parse_args()
+
+    if args.reward and args.trajectories[0] > 0:
+        print("Cannot save trajectories and train reward function at the same time")
+        sys.exit(1)
+
+    if args.reward is not None:
+        print("Loading reward network...")
+        reward_network = TrajectoryRewardNet(TRAJECTORY_LENGTH)
+        weights = torch.load(args.reward)
+        reward_network.load_state_dict(weights)
+
     number_of_trajectories = [-1]
     if args.trajectories is not None:
         number_of_trajectories = args.trajectories[0]

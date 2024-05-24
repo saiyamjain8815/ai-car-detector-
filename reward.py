@@ -7,14 +7,16 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 
+import argparse
+
 
 class TrajectoryRewardNet(nn.Module):
     def __init__(self, input_size, hidden_size=128):
         super(TrajectoryRewardNet, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
-        self.bn1 = nn.BatchNorm1d(hidden_size)
+        self.bn1 = nn.LayerNorm(hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.bn2 = nn.BatchNorm1d(hidden_size)
+        self.bn2 = nn.LayerNorm(hidden_size)
         self.fc3 = nn.Linear(hidden_size, 1)
 
     def forward(self, x):
@@ -140,8 +142,24 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
             predicted_probabilities = bradley_terry_model(rewards1, rewards2)
 
             # Compute loss
-            loss = preference_loss(predicted_probabilities, batch_true_preferences)
-            total_loss += loss.item()
+            try:
+                loss = preference_loss(predicted_probabilities, batch_true_preferences)
+                total_loss += loss.item()
+            except:
+
+                def visualize_trajectories(batch_1, batch_2):
+                    # unbatch
+                    for trajectory in batch_1:
+                        x = trajectory[::2]
+                        y = trajectory[1::2]
+                        plt.plot(x, y, color="red", alpha=0.1)
+                    for trajectory in batch_2:
+                        x = trajectory[::2]
+                        y = trajectory[1::2]
+                        plt.plot(x, y, color="blue", alpha=0.1)
+                    plt.show()
+
+                visualize_trajectories(batch_trajectories1, batch_trajectories2)
 
             # Backward pass and optimization
             loss.backward()
@@ -167,9 +185,32 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
         label="True Reward",
     )
     plt.legend()
+    torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
     plt.savefig("figures/reward.png")
 
 
 if __name__ == "__main__":
-    file_path = "trajectories/database_50.pkl"
-    train_model(file_path)
+    parse = argparse.ArgumentParser(
+        description="Training a Reward From Synthetic Prefereces"
+    )
+    parse.add_argument(
+        "-d",
+        "--database",
+        type=str,
+        help="Directory to trajectory database file",
+    )
+    parse.add_argument(
+        "-e",
+        "--epochs",
+        type=int,
+        help="Number of epochs to train the model",
+    )
+    args = parse.parse_args()
+    if args.database:
+        file_path = args.database
+    else:
+        file_path = "trajectories/database_350.pkl"
+    if args.epochs:
+        train_model(file_path, epochs=args.epochs)
+    else:
+        train_model(file_path, epochs=1000)
