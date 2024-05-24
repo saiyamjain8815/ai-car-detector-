@@ -91,7 +91,7 @@ def prepare_data(data, max_length=input_size // 2):
     return trajectories1, trajectories2, true_preferences
 
 
-def train_model(file_path, epochs=1000, batch_size=8, model_path="best.pth"):
+def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
     data = load_data(file_path)
     trajectories1, trajectories2, true_preferences = prepare_data(data)
 
