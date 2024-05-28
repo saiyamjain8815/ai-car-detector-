@@ -10,18 +10,27 @@ import argparse
 
 
 class TrajectoryRewardNet(nn.Module):
-    def __init__(self, input_size, hidden_size=128):
+    def __init__(self, input_size, hidden_size=128, dropout_prob=0.5):
         super(TrajectoryRewardNet, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.bn1 = nn.LayerNorm(hidden_size)
+        self.dropout1 = nn.Dropout(dropout_prob)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.bn2 = nn.LayerNorm(hidden_size)
-        self.fc3 = nn.Linear(hidden_size, 1)
+        self.dropout2 = nn.Dropout(dropout_prob)
+        self.fc3 = nn.Linear(hidden_size, hidden_size)
+        self.bn3 = nn.LayerNorm(hidden_size)
+        self.dropout3 = nn.Dropout(dropout_prob)
+        self.fc4 = nn.Linear(hidden_size, 1)
 
     def forward(self, x):
         x = F.relu(self.bn1(self.fc1(x)))
+        x = self.dropout1(x)
         x = F.relu(self.bn2(self.fc2(x)))
-        x = self.fc3(x)
+        x = self.dropout2(x)
+        x = F.relu(self.bn3(self.fc3(x)))
+        x = self.dropout3(x)
+        x = self.fc4(x)
         return x
 
 
@@ -44,7 +53,7 @@ net = TrajectoryRewardNet(input_size, hidden_size)
 for param in net.parameters():
     if len(param.shape) > 1:
         nn.init.xavier_uniform_(param, gain=nn.init.calculate_gain("relu"))
-optimizer = optim.Adam(net.parameters(), lr=learning_rate)
+optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate, weight_decay=1e-4)
 
 
 def load_data(file_path):
