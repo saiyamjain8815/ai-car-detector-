@@ -1,6 +1,6 @@
 # This Code is Heavily Inspired By The YouTuber: Cheesy AI
 # Code Changed, Optimized And Commented By: NeuralNine (Florian Dedov)
-# Code Adapted for preference learning as a apart of Emerge Lab research
+# Code Adapted for preference learning for Emerge Lab research by Franklin Yiu
 
 import math
 import random
@@ -223,10 +223,6 @@ def generate_database(trajectory_path):
         for index, (reward, trajectory) in enumerate(trajectories)
     )
 
-    # create trajectories used for making plots in training
-    with open(trajectory_path + "comparator.pkl", "wb") as f:
-        pickle.dump(trajectories[max_index], f)
-
     random.shuffle(trajectories)
     if len(trajectories) % 2 != 0:
         trajectories.pop()
@@ -248,7 +244,7 @@ def generate_database(trajectory_path):
     print(f"Generating Database with {len(trajectory_pairs)} trajectory pairs...")
 
     # Delete all trajectories
-    print("Removing old trajectories...")
+    print("Removing saved trajectories...")
     old_trajectories = glob.glob(trajectory_path + "trajectory*")
     for f in old_trajectories:
         os.remove(f)

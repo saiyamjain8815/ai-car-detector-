@@ -4,6 +4,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import pickle
 import numpy as np
+from sklearn.model_selection import train_test_split
 
 import matplotlib.pyplot as plt
 
@@ -130,19 +131,23 @@ def visualize_trajectories(batch_1, batch_2):
 
 def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
     data, true_rewards = load_data(file_path)
+    training_data, validation_data = train_test_split(
+        data, test_size=0.2, random_state=42
+    )
     trajectories1, trajectories2, true_preferences = prepare_data(data)
+    validation_trajectories1, validation_trajectories2, validation_true_preferences = (
+        prepare_data(validation_data)
+    )
 
     dataset_size = len(true_preferences)
+    validation_dataset_size = len(validation_true_preferences)
 
     if batch_size > dataset_size:
         batch_size = dataset_size
 
     best_loss = np.inf
-
-    network_reward_comparator = []
-    with open("trajectories/comparator.pkl", "rb") as f:
-        comparator_reward, comparator_trajectory = pickle.load(f)
-    comparator_trajectory = prepare_single_trajectory(comparator_trajectory)
+    training_losses = []
+    validation_losses = []
 
     for epoch in range(epochs):
         net.train()
@@ -185,39 +190,51 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
             torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
             optimizer.step()
 
-            for p in net.parameters():
-                # get the smallest weight
-                min_weight = torch.min(p.data)
-                # get the largest weight
-                max_weight = torch.max(p.data)
-                # get the mean of the weights
-                mean_weight = torch.mean(p.data)
-                # check if any weights are nan
-                has_nan = torch.isnan(p.data).any()
-                # print everything
-                print(min_weight, max_weight, mean_weight, has_nan)
+            # for p in net.parameters():
+            #     # get the smallest weight
+            #     min_weight = torch.min(p.data)
+            #     # get the largest weight
+            #     max_weight = torch.max(p.data)
+            #     # get the mean of the weights
+            #     mean_weight = torch.mean(p.data)
+            #     # check if any weights are nan
+            #     has_nan = torch.isnan(p.data).any()
+            #     # print everything
+            #     print(min_weight, max_weight, mean_weight, has_nan)
 
-        average_loss = total_loss / (dataset_size // batch_size)
+        average_training_loss = total_loss / (dataset_size // batch_size)
+        training_losses.append(average_training_loss)
 
-        if average_loss < best_loss:
-            best_loss = average_loss
+        # Validation
+        net.eval()
+        with torch.no_grad():
+            validation_rewards1 = net(validation_trajectories1)
+            validation_rewards2 = net(validation_trajectories2)
+            validation_predicted_probabilities = bradley_terry_model(
+                validation_rewards1, validation_rewards2
+            )
+            validation_loss = preference_loss(
+                validation_predicted_probabilities, validation_true_preferences
+            )
+            validation_losses.append(validation_loss.item())
+
+        if validation_loss.item() < best_loss:
+            best_loss = validation_loss.item()
             torch.save(net.state_dict(), model_path)
-            # print(f"Model saved with loss: {best_loss}")
 
         if epoch % 10 == 0:
-            print(f"Epoch {epoch}/{epochs}, Loss: {average_loss}")
+            print(
+                f"Epoch {epoch}/{epochs}, Train Loss: {average_training_loss}, Val Loss: {validation_loss.item()}"
+            )
 
-        net.eval()
-        network_reward_comparator.append(net(comparator_trajectory).item())
-
-    plt.plot(network_reward_comparator, color="blue", label="Network Reward")
-    plt.plot(
-        [comparator_reward] * len(network_reward_comparator),
-        color="red",
-        label="True Reward",
-    )
+    # Plot training and validation loss
+    plt.figure()
+    plt.plot(training_losses, label="Train Loss")
+    plt.plot(validation_losses, label="Validation Loss")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
     plt.legend()
-    plt.savefig("figures/reward.png")
+    plt.savefig("figures/loss.png")
 
 
 if __name__ == "__main__":
