@@ -5,9 +5,7 @@ import torch.nn.functional as F
 import pickle
 import numpy as np
 from sklearn.model_selection import train_test_split
-
 import matplotlib.pyplot as plt
-
 import argparse
 
 
@@ -27,7 +25,6 @@ class TrajectoryRewardNet(nn.Module):
         return x
 
 
-# Define the Bradley-Terry model to compute preferences
 def bradley_terry_model(r1, r2):
     exp_r1 = torch.exp(r1)
     exp_r2 = torch.exp(r2)
@@ -35,26 +32,21 @@ def bradley_terry_model(r1, r2):
     return probability.squeeze()
 
 
-# Define the loss function
 def preference_loss(predicted_probabilities, true_preferences):
     return F.binary_cross_entropy(predicted_probabilities, true_preferences)
 
 
-# Sample input size and hyperparameters
-input_size = 450 * 2  # Length of trajectory * 2 (for x and y points)
+input_size = 450 * 2
 hidden_size = 128
 learning_rate = 0.0003
 
-# Instantiate the network, optimizer, and criterion
 net = TrajectoryRewardNet(input_size, hidden_size)
 for param in net.parameters():
-    # only apply to weights
     if len(param.shape) > 1:
         nn.init.xavier_uniform_(param, gain=nn.init.calculate_gain("relu"))
 optimizer = optim.Adam(net.parameters(), lr=learning_rate)
 
 
-# Function to load data from .pkl file
 def load_data(file_path):
     with open(file_path, "rb") as f:
         data = pickle.load(f)
@@ -63,7 +55,6 @@ def load_data(file_path):
     return triples, true_rewards
 
 
-# Function to prepare data for training
 def prepare_data(data, max_length=input_size // 2):
     def pad_or_truncate(trajectory, length):
         if len(trajectory) > length:
@@ -75,27 +66,30 @@ def prepare_data(data, max_length=input_size // 2):
     trajectories1 = []
     trajectories2 = []
     true_preferences = []
-    try:
-        for t1, t2, preference in data:
-            t1_padded = pad_or_truncate(t1, max_length)
-            t2_padded = pad_or_truncate(t2, max_length)
-
-            # Flatten the list of tuples
-            t1_flat = [item for sublist in t1_padded for item in sublist]
-            t2_flat = [item for sublist in t2_padded for item in sublist]
-
-            trajectories1.append(t1_flat)
-            trajectories2.append(t2_flat)
-            true_preferences.append(preference)
-    except:
-        import ipdb
-
-        ipdb.set_trace()
+    for t1, t2, preference in data:
+        t1_padded = pad_or_truncate(t1, max_length)
+        t2_padded = pad_or_truncate(t2, max_length)
+        t1_flat = [item for sublist in t1_padded for item in sublist]
+        t2_flat = [item for sublist in t2_padded for item in sublist]
+        trajectories1.append(t1_flat)
+        trajectories2.append(t2_flat)
+        true_preferences.append(preference)
     trajectories1 = torch.tensor(trajectories1, dtype=torch.float32)
     trajectories2 = torch.tensor(trajectories2, dtype=torch.float32)
     true_preferences = torch.tensor(true_preferences, dtype=torch.float32)
-
     return trajectories1, trajectories2, true_preferences
+
+
+def visualize_trajectories(batch_1, batch_2):
+    for trajectory in batch_1:
+        x = trajectory[::2]
+        y = trajectory[1::2]
+        plt.plot(x, y, color="red", alpha=0.1)
+    for trajectory in batch_2:
+        x = trajectory[::2]
+        y = trajectory[1::2]
+        plt.plot(x, y, color="blue", alpha=0.1)
+    plt.show()
 
 
 def prepare_single_trajectory(trajectory, max_length=input_size // 2):
@@ -117,16 +111,11 @@ def prepare_single_trajectory(trajectory, max_length=input_size // 2):
     return trajectory_tensor
 
 
-def visualize_trajectories(batch_1, batch_2):
-    for trajectory in batch_1:
-        x = trajectory[::2]
-        y = trajectory[1::2]
-        plt.plot(x, y, color="red", alpha=0.1)
-    for trajectory in batch_2:
-        x = trajectory[::2]
-        y = trajectory[1::2]
-        plt.plot(x, y, color="blue", alpha=0.1)
-    plt.show()
+def calculate_accuracy(predicted_probabilities, true_preferences):
+    predicted_preferences = (predicted_probabilities > 0.5).float()
+    correct_predictions = (predicted_preferences == true_preferences).float().sum()
+    accuracy = correct_predictions / true_preferences.size(0)
+    return accuracy.item()
 
 
 def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
@@ -134,7 +123,7 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
     training_data, validation_data = train_test_split(
         data, test_size=0.2, random_state=42
     )
-    trajectories1, trajectories2, true_preferences = prepare_data(data)
+    trajectories1, trajectories2, true_preferences = prepare_data(training_data)
     validation_trajectories1, validation_trajectories2, validation_true_preferences = (
         prepare_data(validation_data)
     )
@@ -148,10 +137,13 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
     best_loss = np.inf
     training_losses = []
     validation_losses = []
+    training_accuracies = []
+    validation_accuracies = []
 
     for epoch in range(epochs):
         net.train()
         total_loss = 0.0
+        total_accuracy = 0.0
 
         for i in range(0, dataset_size, batch_size):
             optimizer.zero_grad()
@@ -160,52 +152,29 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
             batch_trajectories2 = trajectories2[i : i + batch_size]
             batch_true_preferences = true_preferences[i : i + batch_size]
 
-            # Forward pass for both trajectories
             rewards1 = net(batch_trajectories1)
             rewards2 = net(batch_trajectories2)
 
-            # Compute preference probabilityabilities
             predicted_probabilities = bradley_terry_model(rewards1, rewards2)
 
-            # Compute loss
-            try:
-                loss = preference_loss(predicted_probabilities, batch_true_preferences)
-                total_loss += loss.item()
-            except:
-                for p in net.parameters():
-                    # get the smallest weight
-                    min_weight = torch.min(p.data)
-                    # get the largest weight
-                    max_weight = torch.max(p.data)
-                    # get the mean of the weights
-                    mean_weight = torch.mean(p.data)
-                    # check if any weights are nan
-                    has_nan = torch.isnan(p.data).any()
-                    # print everything
-                    print(min_weight, max_weight, mean_weight, has_nan)
-                visualize_trajectories(batch_trajectories1, batch_trajectories2)
+            loss = preference_loss(predicted_probabilities, batch_true_preferences)
+            total_loss += loss.item()
 
-            # Backward pass and optimization
+            accuracy = calculate_accuracy(
+                predicted_probabilities, batch_true_preferences
+            )
+            total_accuracy += accuracy * batch_true_preferences.size(0)
+
             loss.backward()
             torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
             optimizer.step()
 
-            # for p in net.parameters():
-            #     # get the smallest weight
-            #     min_weight = torch.min(p.data)
-            #     # get the largest weight
-            #     max_weight = torch.max(p.data)
-            #     # get the mean of the weights
-            #     mean_weight = torch.mean(p.data)
-            #     # check if any weights are nan
-            #     has_nan = torch.isnan(p.data).any()
-            #     # print everything
-            #     print(min_weight, max_weight, mean_weight, has_nan)
-
         average_training_loss = total_loss / (dataset_size // batch_size)
         training_losses.append(average_training_loss)
 
-        # Validation
+        average_training_accuracy = total_accuracy / dataset_size
+        training_accuracies.append(average_training_accuracy)
+
         net.eval()
         with torch.no_grad():
             validation_rewards1 = net(validation_trajectories1)
@@ -218,16 +187,20 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
             )
             validation_losses.append(validation_loss.item())
 
+            validation_accuracy = calculate_accuracy(
+                validation_predicted_probabilities, validation_true_preferences
+            )
+            validation_accuracies.append(validation_accuracy)
+
         if validation_loss.item() < best_loss:
             best_loss = validation_loss.item()
             torch.save(net.state_dict(), model_path)
 
         if epoch % 10 == 0:
             print(
-                f"Epoch {epoch}/{epochs}, Train Loss: {average_training_loss}, Val Loss: {validation_loss.item()}"
+                f"Epoch {epoch}/{epochs}, Train Loss: {average_training_loss}, Val Loss: {validation_loss.item()}, Train Acc: {average_training_accuracy}, Val Acc: {validation_accuracy}"
             )
 
-    # Plot training and validation loss
     plt.figure()
     plt.plot(training_losses, label="Train Loss")
     plt.plot(validation_losses, label="Validation Loss")
@@ -236,22 +209,24 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
     plt.legend()
     plt.savefig("figures/loss.png")
 
+    plt.figure()
+    plt.plot(training_accuracies, label="Train Accuracy")
+    plt.plot(validation_accuracies, label="Validation Accuracy")
+    plt.xlabel("Epochs")
+    plt.ylabel("Accuracy")
+    plt.legend()
+    plt.savefig("figures/accuracy.png")
+
 
 if __name__ == "__main__":
     parse = argparse.ArgumentParser(
-        description="Training a Reward From Synthetic Prefereces"
+        description="Training a Reward From Synthetic Preferences"
     )
     parse.add_argument(
-        "-d",
-        "--database",
-        type=str,
-        help="Directory to trajectory database file",
+        "-d", "--database", type=str, help="Directory to trajectory database file"
     )
     parse.add_argument(
-        "-e",
-        "--epochs",
-        type=int,
-        help="Number of epochs to train the model",
+        "-e", "--epochs", type=int, help="Number of epochs to train the model"
     )
     args = parse.parse_args()
     if args.database:
