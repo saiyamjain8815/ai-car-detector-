@@ -7,6 +7,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import argparse
+import wandb
 
 
 class TrajectoryRewardNet(nn.Module):
@@ -128,6 +129,9 @@ def calculate_accuracy(predicted_probabilities, true_preferences):
 
 
 def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
+    wandb.init(project="Micro Preference")
+    wandb.watch(net, log="all")
+
     data, true_rewards = load_data(file_path)
     training_data, validation_data = train_test_split(
         data, test_size=0.2, random_state=42
@@ -204,6 +208,23 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
         if validation_loss.item() < best_loss:
             best_loss = validation_loss.item()
             torch.save(net.state_dict(), model_path)
+
+        wandb.log(
+            {
+                "Train Loss": average_training_loss,
+                "Validation Loss": validation_loss.item(),
+                "Train Accuracy": average_training_accuracy,
+                "Validation Accuracy": validation_accuracy,
+            },
+            step=epoch,
+        )
+
+        # Log weights histogram
+        for name, param in net.named_parameters():
+            wandb.log(
+                {f"weights/{name}": wandb.Histogram(param.detach().cpu().numpy())},
+                step=epoch,
+            )
 
         if epoch % 10 == 0:
             print(
