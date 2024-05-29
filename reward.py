@@ -140,6 +140,17 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
     validation_trajectories1, validation_trajectories2, validation_true_preferences = (
         prepare_data(validation_data)
     )
+    # Log label balance
+    wandb.log(
+        {
+            "True Preferences Training": wandb.Histogram(
+                true_preferences.detach().cpu().numpy()
+            ),
+            "True Preferences Validation": wandb.Histogram(
+                validation_true_preferences.detach().cpu().numpy()
+            ),
+        }
+    )
 
     dataset_size = len(true_preferences)
     validation_dataset_size = len(validation_true_preferences)
