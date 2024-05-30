@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import argparse
 import wandb
 
+# plot the distribution of reward distributions for when the net gets it right and wrong
+
 
 class TrajectoryRewardNet(nn.Module):
     def __init__(self, input_size, hidden_size=128, dropout_prob=0.5):
