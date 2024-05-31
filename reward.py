@@ -8,6 +8,8 @@ from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import argparse
 import wandb
+from torch.optim.lr_scheduler import StepLR
+import torch.optim.lr_scheduler as lr_scheduler
 
 # plot the distribution of reward distributions for when the net gets it right and wrong
 
@@ -166,10 +168,19 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
     training_accuracies = []
     validation_accuracies = []
 
+    scheduler = lr_scheduler.LinearLR(
+        optimizer, start_factor=1.0, end_factor=0.01, total_iters=epochs
+    )
+
     for epoch in range(epochs):
         net.train()
         total_loss = 0.0
         total_accuracy = 0.0
+
+        TP_rewards = []
+        TN_rewards = []
+        FP_rewards = []
+        FN_rewards = []
 
         for i in range(0, dataset_size, batch_size):
             optimizer.zero_grad()
@@ -194,6 +205,19 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
             loss.backward()
             torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
             optimizer.step()
+
+            scheduler.step()
+
+            # Classify rewards
+            for idx, prob in enumerate(predicted_probabilities):
+                if prob > 0.5 and batch_true_preferences[idx] == 1:
+                    TP_rewards.append(true_rewards[i + idx][0])
+                elif prob <= 0.5 and batch_true_preferences[idx] == 0:
+                    TN_rewards.append(true_rewards[i + idx][1])
+                elif prob > 0.5 and batch_true_preferences[idx] == 0:
+                    FP_rewards.append(true_rewards[i + idx][1])
+                elif prob <= 0.5 and batch_true_preferences[idx] == 1:
+                    FN_rewards.append(true_rewards[i + idx][0])
 
         average_training_loss = total_loss / (dataset_size // batch_size)
         training_losses.append(average_training_loss)
@@ -239,9 +263,31 @@ def train_model(file_path, epochs=1000, batch_size=32, model_path="best.pth"):
                 step=epoch,
             )
 
+        # Log reward distributions
+        if TP_rewards:
+            wandb.log(
+                {"TP Reward Distribution": wandb.Histogram(np.array(TP_rewards))},
+                step=epoch,
+            )
+        if TN_rewards:
+            wandb.log(
+                {"TN Reward Distribution": wandb.Histogram(np.array(TN_rewards))},
+                step=epoch,
+            )
+        if FP_rewards:
+            wandb.log(
+                {"FP Reward Distribution": wandb.Histogram(np.array(FP_rewards))},
+                step=epoch,
+            )
+        if FN_rewards:
+            wandb.log(
+                {"FN Reward Distribution": wandb.Histogram(np.array(FN_rewards))},
+                step=epoch,
+            )
+
         if epoch % 10 == 0:
             print(
-                f"Epoch {epoch}/{epochs}, Train Loss: {average_training_loss}, Val Loss: {validation_loss.item()}, Train Acc: {average_training_accuracy}, Val Acc: {validation_accuracy}"
+                f"Epoch {epoch}/{epochs}, Train Loss: {average_training_loss}, Val Loss: {validation_loss.item()}, Train Acc: {average_training_accuracy}, Val Acc: {validation_accuracy}, LR: {scheduler.get_last_lr()[0]}"
             )
 
     plt.figure()
